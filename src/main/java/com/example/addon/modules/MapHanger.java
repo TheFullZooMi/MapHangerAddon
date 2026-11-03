@@ -45,8 +45,8 @@ public class MapHanger extends Module {
 
     private final Setting<Integer> delay = sgGeneral.add(new IntSetting.Builder()
         .name("delay")
-        .description("Пауза между действиями в тиках.")
-        .defaultValue(3)
+        .description("Пауза между установкой рамок в тиках (0 = каждый тик). Карты в рамки вешаются сразу, без этой задержки.")
+        .defaultValue(2)
         .min(0)
         .sliderMax(20)
         .build());
@@ -96,7 +96,7 @@ public class MapHanger extends Module {
     private final Map<Integer, Integer> filled = new HashMap<>();
     private final Map<BlockPos, Integer> placed = new HashMap<>();
     private int tick;
-    private int cooldown;
+    private int placeCooldown;
 
     public MapHanger() {
         super(Categories.World, "map-hanger", "Ставит рамки и сразу вешает в них карты.");
@@ -105,7 +105,7 @@ public class MapHanger extends Module {
     @Override
     public void onActivate() {
         tick = 0;
-        cooldown = 0;
+        placeCooldown = 0;
         filled.clear();
         placed.clear();
     }
@@ -118,18 +118,14 @@ public class MapHanger extends Module {
         filled.values().removeIf(t -> tick - t > 30);
         placed.values().removeIf(t -> tick - t > 30);
 
-        if (cooldown > 0) {
-            cooldown--;
-            return;
-        }
+        if (placeCooldown > 0) placeCooldown--;
 
-        if (fill.get() && tryFill()) {
-            cooldown = delay.get();
-            return;
-        }
+        // Карты вешаем сразу, как только рамка появилась: без задержки.
+        if (fill.get() && tryFill()) return;
 
-        if (place.get() && tryPlace()) {
-            cooldown = delay.get();
+        // Задержка регулирует только частоту установки рамок.
+        if (place.get() && placeCooldown <= 0 && tryPlace()) {
+            placeCooldown = delay.get();
         }
     }
 
@@ -182,6 +178,9 @@ public class MapHanger extends Module {
     private boolean tryPlace() {
         FindItemResult frameItem = InvUtils.findInHotbar(Items.ITEM_FRAME, Items.GLOW_ITEM_FRAME);
         if (!frameItem.found()) return false;
+
+        // Карты кончились: новые рамки не ставим, чтобы не плодить пустые.
+        if (fill.get() && !InvUtils.find(Items.FILLED_MAP).found()) return false;
 
         Direction face = wallSide.get();
         BlockPos origin = mc.player.getBlockPos();
